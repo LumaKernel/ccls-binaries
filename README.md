@@ -7,6 +7,13 @@ Apache License 2.0 はバイナリをソースなしで再配布可能
 
 なお，このREADME，install.ps1 は [WTFPL](http://www.wtfpl.net/) にします．
 
+
+# 問題点
+
+公式の ccls の LICENSE が現時点で テンプレートのまま名前が書かれていなくて
+これ有効なのか？って無限回言っている
+
+
 # ビルド手順
 
 準備
@@ -20,6 +27,8 @@ clone とかはスクリプトがやってくれる．
 
 バージョンはここで -> https://github.com/MaskRay/ccls/tags
 
+自分で MSVC の Developer 環境になるようにしてください (適当)
+
 
 ```powershell
 # scoop のパスを一番手前に ぶっこむなら
@@ -31,7 +40,7 @@ rmdir build -Recurse -Force
 # 成功したら build をリリース
 ```
 
-ビルド目安時間 : 
+ビルド目安時間 : 2分
 
 
 アーキテクチャのチェック
