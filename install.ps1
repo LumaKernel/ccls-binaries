@@ -1,8 +1,14 @@
 
-Param([parameter(mandatory)][string]$version, $dest="build")
+Param(
+  [Parameter(mandatory)]
+  [string]
+  $version,
+
+  $dest="build"
+)
 
 if ( Test-Path $dest ) {
-  Throw "$dest already exists"
+  Throw "Path '$dest' already exists"
 }
 
 $timestamp = Get-Date -Format FileDateTime
@@ -11,13 +17,14 @@ function Make-Tmp {
 
   &{
     pushd $psscriptroot
+    try {
       if ( test-path "./.tmp/$timestamp" ) {
-        throw "failed to make temporally directory"
+        throw "Failed to make temporally directory"
       }
       mkdir "./.tmp/$timestamp"
-    popd
+    } finally { popd }
   } | Out-Null
-  
+ 
   return "$PSScriptRoot/.tmp/$timestamp"
 }
 
@@ -25,25 +32,45 @@ function Clear-Tmp {
   rmdir "$PSScriptRoot/.tmp/$timestamp" -Recurse -Force
 }
 
+function Timer-Start {
+  $script:stopwatch = [Diagnostics.Stopwatch]::StartNew()
+}
+
+function Timer-Stop-Show {
+  $script:stopwatch.Stop()
+  $elapsedSec = [int]($script:stopwatch.Elapsed.TotalSeconds)
+  $elapsedMin = [int]($elapsedSec / 60)
+  $elapsedHour = [int]($elapsedMin / 60)
+  $elapsedSec %= 60
+  $elapsedMin %= 60
+
+  echo "total time : $elapsedHour hr $elapsedMin min $elapsedSec sec"
+}
+
+
 $tmpdir = Make-Tmp
 
 pushd $PSScriptRoot
+try {
   if ( -not (Test-Path install.ps1) ) {
     Throw "Cannot find install.ps1 itself"
   }
-popd
+} finally { popd }
 
 git clone https://github.com/MaskRay/ccls.git "`"$tmpdir`""
 
 pushd $tmpdir
+try {
   git reset --hard
   git clean -fdx
   git checkout "$version"
-  if ($? -ne $True) {
+  git submodule init
+  git submodule update
+  if ($LASTEXITCODE) {
     Clear-Tmp
-    Throw "checking-out to version $version was failed!"
+    Throw "Checking-out to version $version was failed!"
   }
-popd
+} finally { popd }
 
 if ( Test-Path $dest ) {
   Clear-Tmp
@@ -52,26 +79,39 @@ if ( Test-Path $dest ) {
 
 mkdir $dest
 
+Timer-Start
 pushd $dest
+try {
   cp "$tmpdir/LICENSE" . -Force
 
   $scoopdir = "$env:UserProfile/scoop"
   $globaldir = "C:/ProgramData/scoop"
 
-  $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+  $LLVMAppName = "llvm-clang"
 
-  cmake "-H$tmpdir" "-B." -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_PREFIX_PATH="$scoopdir/apps/llvm-self-build/current/Release;$scoopdir/apps/llvm-self-build/current/Release/tools/clang;$scoopdir/apps/llvm-self-build/current;$scoopdir/apps/llvm-self-build/current/tools/clang;$globaldir/apps/llvm-self-build/current/Release;$globaldir/apps/llvm-self-build/current/Release/tools/clang;$globaldir/apps/llvm-self-build/current;$globaldir/apps/llvm-self-build/current/tools/clang"
+  $ScoopClangPrefixPaths =
+    "apps/$LLVMAppName/current/bin",
+    "apps/$LLVMAppName/current/tools/clang",
+    "apps/$LLVMAppName/current"
+
+  $ClangPrefixes =
+    (( $ScoopClangPrefixPaths | %{ "$scoopdir/$_" } ) +
+     ( $ScoopClangPrefixPaths | %{ "$globaldir/$_" } ) `
+    ) -join ";"
+
+  echo "Prefixes: `"$ClangPrefixes`""
+
+  cmake "-H$tmpdir" "-B." -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_RC_COMPILER=llvm-rc -DCMAKE_CXX_COMPILER=clang-cl "-DCMAKE_PREFIX_PATH=$ClangPrefixes"
+  if ($LASTEXITCODE) {
+    Throw "CMake was failed!"
+  }
   ninja
+  if ($LASTEXITCODE) {
+    Throw "Ninja was failed!"
+  }
+} finally { popd }
 
-  $stopwatch.Stop()
-  $elapsedSec = [int]($stopwatch.Elapsed.TotalSeconds)
-  $elapsedMin = [int]($elapsedSec / 60)
-  $elapsedHour = [int]($elapsedMin / 60)
-  $elapsedSec %= 60
-  $elapsedMin %= 60
-
-  echo "build time : $elapsedHour hr $elapsedMin min $elapsedSec sec"
-popd
+Timer-Stop-Show
 
 Clear-Tmp
 
